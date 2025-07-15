@@ -1,0 +1,71 @@
+# TravelMind Requirements - 100% Free & Open Source
+# No packages require credit cards or paid subscriptions
+
+# Core ML and Data Science (Free)
+pandas>=1.5.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+matplotlib>=3.6.0
+seaborn>=0.11.0
+plotly>=5.15.0
+
+# Web Framework (Free)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+streamlit>=1.28.0
+
+# Data Validation (Free)
+pydantic>=2.4.0
+
+# HTTP Requests (Free)
+requests>=2.31.0
+httpx>=0.25.0
+
+# Google Gemini API (Free tier available)
+google-generativeai>=0.3.0
+
+# Database (Free - SQLite built into Python)
+sqlite3  # Built into Python
+
+# Free Weather and Location Services
+# Note: These APIs are used via requests, no additional packages needed
+# - wttr.in (completely free)
+# - Open-Meteo (free, no signup)
+# - OpenStreetMap Nominatim (free geocoding)
+
+# Development and Testing (Free)
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+
+# Environment Management (Free)
+python-dotenv>=1.0.0
+
+# Date/Time Handling (Free)
+python-dateutil>=2.8.0
+
+# Logging and Utilities (Free)
+colorama>=0.4.6  # For colored terminal output
+tqdm>=4.66.0     # Progress bars
+
+# Optional: Enhanced data processing (Free)
+openpyxl>=3.1.0  # Excel file support
+xlsxwriter>=3.1.0  # Excel writing
+
+# Development Tools (Free)
+black>=23.0.0    # Code formatting
+flake8>=6.0.0    # Linting
+mypy>=1.5.0      # Type checking
+
+# Note: All packages listed are:
+# ✅ Completely free and open source
+# ✅ No credit card required
+# ✅ No hidden costs or premium tiers needed
+# ✅ Well-maintained and production-ready
+
+# Only external API used: Google Gemini (has generous free tier)
+# All other services are completely free:
+# - Weather: wttr.in, Open-Meteo
+# - Geocoding: OpenStreetMap Nominatim
+# - Database: SQLite (built into Python)
+# - ML: Scikit-learn ecosystem

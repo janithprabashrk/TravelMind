@@ -1,4 +1,3 @@
-import google.generativeai as genai
 import json
 import requests
 import time
@@ -7,11 +6,18 @@ from typing import List, Dict, Optional
 import logging
 from datetime import datetime
 import asyncio
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut
 import random
+from pathlib import Path
 
-from ..config import Config
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    print("⚠️  Google Generative AI not available. Install with: pip install google-generativeai")
+
+from ..utils.config import get_settings
+from ..utils.free_weather import get_weather_for_hotel_recommendation
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,25 +28,44 @@ class HotelDataCollector:
     
     def __init__(self):
         """Initialize the data collector"""
-        if not Config.GEMINI_API_KEY:
+        self.settings = get_settings()
+        
+        if not GEMINI_AVAILABLE:
+            raise ImportError("Google Generative AI package not available. Install with: pip install google-generativeai")
+        
+        if not self.settings.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY not found in environment variables")
         
-        genai.configure(api_key=Config.GEMINI_API_KEY)
+        genai.configure(api_key=self.settings.GEMINI_API_KEY)
         self.model = genai.GenerativeModel('gemini-pro')
-        self.geolocator = Nominatim(user_agent="travelmind")
+        
+        # Create data directory if it doesn't exist
+        self.data_path = Path("./data")
+        self.data_path.mkdir(exist_ok=True)
+        
+        logger.info("HotelDataCollector initialized with free weather service")
         
     def get_location_coordinates(self, location: str) -> Optional[Dict[str, float]]:
-        """Get latitude and longitude for a location"""
+        """Get latitude and longitude for a location using free Nominatim service"""
         try:
-            location_data = self.geolocator.geocode(location, timeout=10)
-            if location_data:
-                return {
-                    "latitude": location_data.latitude,
-                    "longitude": location_data.longitude,
-                    "display_name": location_data.address
-                }
-        except GeocoderTimedOut:
-            logger.warning(f"Geocoding timeout for location: {location}")
+            # Use free Nominatim service from OpenStreetMap
+            url = "https://nominatim.openstreetmap.org/search"
+            params = {
+                "q": location,
+                "format": "json",
+                "limit": 1
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data:
+                    return {
+                        "latitude": float(data[0]["lat"]),
+                        "longitude": float(data[0]["lon"]),
+                        "display_name": data[0]["display_name"]
+                    }
         except Exception as e:
             logger.error(f"Geocoding error for {location}: {str(e)}")
         return None
@@ -48,7 +73,7 @@ class HotelDataCollector:
     def generate_hotel_prompt(self, location: str, hotel_type: str = "hotels") -> str:
         """Generate prompt for Gemini API to get hotel information"""
         return f"""
-        Please provide detailed information about {Config.MAX_HOTELS_PER_LOCATION} popular {hotel_type} in {location}.
+        Please provide detailed information about {self.settings.MAX_HOTELS_PER_LOCATION} popular {hotel_type} in {location}.
         For each hotel, provide the following information in JSON format:
         
         {{
@@ -214,14 +239,12 @@ class HotelDataCollector:
         return result
     
     async def _get_weather_patterns(self, coordinates: Dict) -> Dict:
-        """Get weather patterns for seasonal analysis (optional)"""
-        if not Config.OPENWEATHER_API_KEY:
-            return self._generate_mock_weather_data()
-        
+        """Get weather patterns for seasonal analysis using free weather service"""
         try:
-            # This would use OpenWeatherMap API for real weather data
-            # For now, returning mock data
-            return self._generate_mock_weather_data()
+            # Use free weather service instead of paid API
+            location_str = f"{coordinates.get('latitude', 0)},{coordinates.get('longitude', 0)}"
+            weather_data = get_weather_for_hotel_recommendation(location_str)
+            return weather_data
         except Exception as e:
             logger.warning(f"Could not fetch weather data: {str(e)}")
             return self._generate_mock_weather_data()
@@ -237,7 +260,7 @@ class HotelDataCollector:
     
     def save_to_json(self, data: Dict, location: str):
         """Save collected data to JSON file"""
-        filename = Config.DATA_PATH / f"{location.replace(' ', '_').lower()}_hotels.json"
+        filename = self.data_path / f"{location.replace(' ', '_').lower()}_hotels.json"
         
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -254,9 +277,18 @@ class HotelDataCollector:
         
         # Flatten nested dictionaries
         if 'contact_info' in df.columns:
-            contact_df = pd.json_normalize(df['contact_info'])
-            contact_df.columns = [f'contact_{col}' for col in contact_df.columns]
-            df = pd.concat([df.drop('contact_info', axis=1), contact_df], axis=1)
+            # Convert contact_info column to list of dicts if needed
+            contact_data = []
+            for contact_info in df['contact_info']:
+                if isinstance(contact_info, dict):
+                    contact_data.append(contact_info)
+                else:
+                    contact_data.append({})
+            
+            if contact_data:
+                contact_df = pd.json_normalize(contact_data)
+                contact_df.columns = [f'contact_{col}' for col in contact_df.columns]
+                df = pd.concat([df.drop('contact_info', axis=1), contact_df], axis=1)
         
         # Convert lists to strings
         list_columns = ['amenities', 'room_types', 'nearby_attractions', 'business_facilities', 'accessibility']
@@ -264,11 +296,41 @@ class HotelDataCollector:
             if col in df.columns:
                 df[col] = df[col].apply(lambda x: ', '.join(x) if isinstance(x, list) else str(x))
         
-        filename = Config.DATA_PATH / f"{location.replace(' ', '_').lower()}_hotels.csv"
+        filename = self.data_path / f"{location.replace(' ', '_').lower()}_hotels.csv"
         df.to_csv(filename, index=False, encoding='utf-8')
         
         logger.info(f"CSV data saved to {filename}")
         return filename
+
+    def get_weather_data(self, location: str) -> Dict:
+        """Get weather data for a location using free weather service"""
+        if self.use_free_weather:
+            try:
+                weather_info = get_weather_for_hotel_recommendation(location)
+                logger.info(f"Retrieved free weather data for {location}")
+                return weather_info
+            except Exception as e:
+                logger.warning(f"Free weather service failed for {location}: {e}")
+                return {
+                    "temperature": 22,
+                    "condition": "Pleasant",
+                    "season": "spring",
+                    "travel_recommendation": "Good time to visit",
+                    "recommended_activities": ["sightseeing", "dining"],
+                    "weather_score": 0.7,
+                    "best_hotel_types": ["city hotel", "boutique hotel"]
+                }
+        else:
+            # Fallback to simple weather data
+            return {
+                "temperature": 22,
+                "condition": "Pleasant",
+                "season": "spring",
+                "travel_recommendation": "Good time to visit",
+                "recommended_activities": ["sightseeing", "dining"],
+                "weather_score": 0.7,
+                "best_hotel_types": ["city hotel", "boutique hotel"]
+            }
 
 # Example usage and testing
 async def main():
