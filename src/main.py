@@ -9,7 +9,10 @@ import traceback
 import uvicorn
 
 from .api.routes import router, admin_router
-from .config import Config
+from .utils.config import get_settings
+
+# Get settings instance
+settings = get_settings()
 
 # Configure logging
 logging.basicConfig(
@@ -47,7 +50,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={
             "error": "Internal server error",
-            "detail": str(exc) if Config.DEBUG else "An unexpected error occurred",
+            "detail": str(exc) if settings.DEBUG else "An unexpected error occurred",
             "timestamp": datetime.now().isoformat(),
             "path": str(request.url)
         }
@@ -58,11 +61,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def startup_event():
     """Application startup"""
     logger.info("Starting TravelMind API...")
-    logger.info(f"Debug mode: {Config.DEBUG}")
-    logger.info(f"API will be available at http://{Config.API_HOST}:{Config.API_PORT}")
+    logger.info(f"Debug mode: {settings.DEBUG}")
+    logger.info(f"API will be available at http://{settings.API_HOST}:{settings.API_PORT}")
     
     # Create necessary directories
-    Config.create_directories()
+    from pathlib import Path
+    Path("./data").mkdir(exist_ok=True)
+    Path("./models").mkdir(exist_ok=True)
+    Path("./logs").mkdir(exist_ok=True)
     
     logger.info("TravelMind API started successfully!")
 
@@ -146,10 +152,10 @@ def run_dev_server():
     """Run development server"""
     uvicorn.run(
         "src.main:app",
-        host=Config.API_HOST,
-        port=Config.API_PORT,
-        reload=Config.DEBUG,
-        log_level="info" if Config.DEBUG else "warning"
+        host=settings.API_HOST,
+        port=settings.API_PORT,
+        reload=settings.DEBUG,
+        log_level="info" if settings.DEBUG else "warning"
     )
 
 if __name__ == "__main__":

@@ -25,7 +25,7 @@ httpx>=0.25.0
 google-generativeai>=0.3.0
 
 # Database (Free - SQLite built into Python)
-sqlite3  # Built into Python
+# sqlite3 is built into Python - no separate package needed
 
 # Free Weather and Location Services
 # Note: These APIs are used via requests, no additional packages needed

@@ -14,6 +14,7 @@ try:
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
+    genai = None
     print("⚠️  Google Generative AI not available. Install with: pip install google-generativeai")
 
 from ..utils.config import get_settings
@@ -36,8 +37,14 @@ class HotelDataCollector:
         if not self.settings.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY not found in environment variables")
         
-        genai.configure(api_key=self.settings.GEMINI_API_KEY)
-        self.model = genai.GenerativeModel('gemini-pro')
+        try:
+            if genai is not None:
+                genai.configure(api_key=self.settings.GEMINI_API_KEY)
+                self.model = genai.GenerativeModel('gemini-pro')
+            else:
+                raise RuntimeError("Google Generative AI not available")
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize Gemini API: {e}")
         
         # Create data directory if it doesn't exist
         self.data_path = Path("./data")
@@ -304,17 +311,16 @@ class HotelDataCollector:
 
     def get_weather_data(self, location: str) -> Dict:
         """Get weather data for a location using free weather service"""
-        if self.use_free_weather:
-            try:
-                weather_info = get_weather_for_hotel_recommendation(location)
-                logger.info(f"Retrieved free weather data for {location}")
-                return weather_info
-            except Exception as e:
-                logger.warning(f"Free weather service failed for {location}: {e}")
-                return {
-                    "temperature": 22,
-                    "condition": "Pleasant",
-                    "season": "spring",
+        try:
+            weather_info = get_weather_for_hotel_recommendation(location)
+            logger.info(f"Retrieved free weather data for {location}")
+            return weather_info
+        except Exception as e:
+            logger.warning(f"Free weather service failed for {location}: {e}")
+            return {
+                "temperature": 22,
+                "condition": "Pleasant",
+                "season": "spring",
                     "travel_recommendation": "Good time to visit",
                     "recommended_activities": ["sightseeing", "dining"],
                     "weather_score": 0.7,

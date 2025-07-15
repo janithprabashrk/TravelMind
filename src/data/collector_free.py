@@ -1,4 +1,3 @@
-import google.generativeai as genai
 import json
 import requests
 import time
@@ -9,6 +8,14 @@ from datetime import datetime
 import asyncio
 import random
 from pathlib import Path
+
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    genai = None
+    print("⚠️  Google Generative AI not available. Install with: pip install google-generativeai")
 
 from ..utils.config import get_settings
 from ..utils.free_weather import get_weather_for_hotel_recommendation
@@ -24,11 +31,20 @@ class HotelDataCollector:
         """Initialize the data collector"""
         self.settings = get_settings()
         
+        if not GEMINI_AVAILABLE:
+            raise ImportError("Google Generative AI package not available. Install with: pip install google-generativeai")
+        
         if not self.settings.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY not found in environment variables")
         
-        genai.configure(api_key=self.settings.GEMINI_API_KEY)
-        self.model = genai.GenerativeModel('gemini-pro')
+        try:
+            if genai is not None:
+                genai.configure(api_key=self.settings.GEMINI_API_KEY)
+                self.model = genai.GenerativeModel('gemini-pro')
+            else:
+                raise RuntimeError("Google Generative AI not available")
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize Gemini API: {e}")
         
         # Create data directory if it doesn't exist
         self.data_path = Path("./data")
