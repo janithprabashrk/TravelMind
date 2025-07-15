@@ -11,10 +11,13 @@ from typing import List, Dict, Tuple, Optional, Any
 from datetime import datetime
 import joblib
 
-from ..config import Config
+from ..utils.config import get_settings
 from ..data.storage import DatabaseManager
 
 logger = logging.getLogger(__name__)
+
+# Get settings instance
+settings = get_settings()
 
 class HotelRecommendationEngine:
     """Advanced hotel recommendation system using multiple ML approaches"""
@@ -44,7 +47,7 @@ class HotelRecommendationEngine:
         self.db = DatabaseManager()
     
     def train_models(self, X: np.ndarray, y_dict: Dict[str, np.ndarray], 
-                    feature_names: List[str], hotel_ids: List[int] = None):
+                    feature_names: List[str], hotel_ids: Optional[List[int]] = None):
         """Train all recommendation models"""
         logger.info("Starting model training...")
         
