@@ -14,7 +14,7 @@ from .schemas import (
 )
 from ..models.trainer import ModelTrainer
 from ..models.recommender import HotelRecommendationEngine
-from ..data.storage import DatabaseManager
+from ..data.storage_fixed import DatabaseManager
 from ..data.collector import HotelDataCollector
 from ..config import Config
 

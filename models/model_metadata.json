@@ -1,0 +1,29 @@
+{
+  "feature_names": [
+    "rating",
+    "price_per_night",
+    "total_reviews",
+    "amenity_count",
+    "has_pool",
+    "has_spa",
+    "has_wifi",
+    "has_restaurant",
+    "has_gym",
+    "is_resort",
+    "is_boutique",
+    "is_business",
+    "is_family_friendly",
+    "temperature",
+    "weather_score",
+    "price_category"
+  ],
+  "model_types": {
+    "overall": "RandomForestRegressor",
+    "value": "Ridge",
+    "luxury": "RandomForestRegressor",
+    "family": "RandomForestRegressor"
+  },
+  "training_date": "2025-07-15T21:20:30.093603",
+  "num_samples": 240,
+  "num_features": 16
+}

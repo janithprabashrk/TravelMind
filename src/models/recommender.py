@@ -60,6 +60,8 @@ class HotelRecommendationEngine:
         # Apply PCA for dimensionality reduction if needed
         if X.shape[1] > 50:
             logger.info("Applying PCA for dimensionality reduction...")
+            if self.pca is None:
+                self.pca = PCA(n_components=0.95)
             X_reduced = self.pca.fit_transform(X)
         else:
             X_reduced = X
@@ -472,7 +474,8 @@ if __name__ == "__main__":
         print("Model training successful!")
         
         # Save models
-        model_path = Config.MODEL_PATH / "recommendation_models.pkl"
+        from pathlib import Path
+        model_path = Path(settings.MODEL_PATH) / "recommendation_models.pkl"
         engine.save_models(str(model_path))
         print(f"Models saved to {model_path}")
         

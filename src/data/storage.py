@@ -6,22 +6,185 @@ from typing import List, Dict, Optional, Any
 import logging
 from pathlib import Path
 
-from ..config import Config
+from ..utils.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
-    """Manages database operations for TravelMind"""
+    """Database manager that works with SQLite and MySQL"""
     
     def __init__(self, db_path: Optional[str] = None):
         """Initialize database connection"""
-        self.db_path = db_path or Config.DATA_PATH / "travelmind.db"
-        self.init_database()
+        settings = get_settings()
+        self.db_url = settings.DATABASE_URL
+        self.db_type = self._detect_db_type(self.db_url)
+        
+        if self.db_type == 'mysql':
+            self._init_mysql()
+        else:
+            self._init_sqlite()
     
+    def _detect_db_type(self, db_url: str) -> str:
+        """Detect database type"""
+        if 'mysql' in db_url.lower():
+            return 'mysql'
+        return 'sqlite'
+    
+    def _init_mysql(self):
+        """Initialize MySQL connection"""
+        try:
+            import pymysql
+            from sqlalchemy import create_engine, text
+            
+            self.engine = create_engine(self.db_url, echo=False)
+            self._create_mysql_tables()
+            logger.info("MySQL database initialized")
+            
+        except Exception as e:
+            logger.error(f"MySQL initialization failed: {e}")
+            self._init_sqlite()  # Fallback
+    
+    def _init_sqlite(self):
+        """Initialize SQLite connection"""
+        # Extract path from URL or use default
+        if self.db_url.startswith("sqlite:///"):
+            db_file = self.db_url.replace("sqlite:///", "").replace("./", "")
+        else:
+            db_file = "travelmind.db"
+        
+        self.db_path = Path(db_file)
+        self.connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self.init_database()
+        logger.info(f"SQLite database initialized: {self.db_path}")
+    
+    def _init_mysql_connection(self):
+        """Initialize MySQL connection using SQLAlchemy"""
+        try:
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+            
+            self.engine = create_engine(self.db_url, echo=False, pool_pre_ping=True)
+            self.Session = sessionmaker(bind=self.engine)
+            self._create_mysql_tables()
+            logger.info("MySQL database connection established")
+            
+        except ImportError:
+            logger.warning("SQLAlchemy not available, falling back to SQLite")
+            self._init_sqlite_fallback()
+        except Exception as e:
+            logger.error(f"MySQL connection failed: {e}")
+            self._init_sqlite_fallback()
+    
+    def _init_sqlite_connection(self):
+        """Initialize SQLite connection"""
+        if self.db_url.startswith("sqlite:///"):
+            # Extract path from SQLite URL
+            db_file = self.db_url.replace("sqlite:///", "")
+            if db_file.startswith("./"):
+                db_file = db_file[2:]  # Remove ./
+            self.db_path = Path(db_file)
+        else:
+            self.db_path = Path("travelmind.db")  # Fallback
+        
+        self.connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self.init_database()
+        logger.info(f"SQLite database connection established: {self.db_path}")
+    
+    def _init_sqlite_fallback(self):
+        """Fallback to SQLite when other databases fail"""
+        self.db_type = 'sqlite'
+        self.db_path = Path("travelmind.db")
+        self.connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self.init_database()
+        logger.info("Using SQLite fallback database")
+    
+    def _create_mysql_tables(self):
+        """Create tables for MySQL"""
+        from sqlalchemy import text
+        
+        with self.engine.connect() as conn:
+            # Hotels table for MySQL
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS hotels (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    location VARCHAR(255) NOT NULL,
+                    address TEXT,
+                    star_rating DECIMAL(2,1),
+                    user_rating DECIMAL(2,1),
+                    min_price DECIMAL(10,2),
+                    max_price DECIMAL(10,2),
+                    property_type VARCHAR(100),
+                    amenities JSON,
+                    room_types JSON,
+                    description TEXT,
+                    best_season VARCHAR(50),
+                    nearby_attractions JSON,
+                    contact_info JSON,
+                    sustainability_rating DECIMAL(2,1),
+                    business_facilities JSON,
+                    family_friendly BOOLEAN,
+                    pet_friendly BOOLEAN,
+                    accessibility JSON,
+                    seasonal_data JSON,
+                    collected_at TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY unique_hotel (name, location)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """))
+            
+            # User preferences table
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id VARCHAR(255),
+                    location VARCHAR(255),
+                    budget_min DECIMAL(10,2),
+                    budget_max DECIMAL(10,2),
+                    preferred_season VARCHAR(50),
+                    preferred_amenities TEXT,
+                    property_type_preference VARCHAR(100),
+                    family_travel BOOLEAN,
+                    business_travel BOOLEAN,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            
+            # Recommendations table
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS recommendations (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id VARCHAR(255),
+                    hotel_id INT,
+                    score DECIMAL(5,3),
+                    recommendation_type VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (hotel_id) REFERENCES hotels (id)
+                )
+            """))
+            
+            # User feedback table
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS user_feedback (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id VARCHAR(255),
+                    hotel_id INT,
+                    recommendation_id INT,
+                    rating DECIMAL(2,1),
+                    feedback_text TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (hotel_id) REFERENCES hotels (id),
+                    FOREIGN KEY (recommendation_id) REFERENCES recommendations (id)
+                )
+            """))
+            
     def init_database(self):
-        """Initialize database tables"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        """Initialize database tables (SQLite version)"""
+        if self.connection is None:
+            return
+            
+        with self.connection:
+            cursor = self.connection.cursor()
             
             # Hotels table
             cursor.execute("""
@@ -104,65 +267,130 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_hotels_price ON hotels(min_price, max_price)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_recommendations_user ON recommendations(user_id)")
             
-            conn.commit()
+            self.connection.commit()
             logger.info("Database tables initialized successfully")
     
     def insert_hotels(self, hotels: List[Dict[str, Any]]) -> int:
         """Insert hotel data into database"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            inserted_count = 0
+        if self.db_type == 'mysql' and self.engine:
+            return self._insert_hotels_mysql(hotels)
+        else:
+            return self._insert_hotels_sqlite(hotels)
+    
+    def _insert_hotels_mysql(self, hotels: List[Dict[str, Any]]) -> int:
+        """Insert hotels using MySQL"""
+        from sqlalchemy import text
+        inserted_count = 0
+        
+        with self.engine.connect() as conn:
             for hotel in hotels:
                 try:
-                    # Convert lists and dicts to JSON strings
-                    amenities = json.dumps(hotel.get('amenities', []))
-                    room_types = json.dumps(hotel.get('room_types', []))
-                    nearby_attractions = json.dumps(hotel.get('nearby_attractions', []))
-                    contact_info = json.dumps(hotel.get('contact_info', {}))
-                    business_facilities = json.dumps(hotel.get('business_facilities', []))
-                    accessibility = json.dumps(hotel.get('accessibility', []))
-                    seasonal_data = json.dumps(hotel.get('seasonal_data', {}))
-                    
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO hotels (
+                    conn.execute(text("""
+                        INSERT INTO hotels (
                             name, location, address, star_rating, user_rating,
                             min_price, max_price, property_type, amenities, room_types,
                             description, best_season, nearby_attractions, contact_info,
                             sustainability_rating, business_facilities, family_friendly,
                             pet_friendly, accessibility, seasonal_data, collected_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        hotel.get('name'),
-                        hotel.get('location'),
-                        hotel.get('address'),
-                        hotel.get('star_rating'),
-                        hotel.get('user_rating'),
-                        hotel.get('min_price'),
-                        hotel.get('max_price'),
-                        hotel.get('property_type'),
-                        amenities,
-                        room_types,
-                        hotel.get('description'),
-                        hotel.get('best_season'),
-                        nearby_attractions,
-                        contact_info,
-                        hotel.get('sustainability_rating'),
-                        business_facilities,
-                        hotel.get('family_friendly'),
-                        hotel.get('pet_friendly'),
-                        accessibility,
-                        seasonal_data,
-                        hotel.get('collected_at', datetime.now().isoformat())
-                    ))
+                        ) VALUES (
+                            :name, :location, :address, :star_rating, :user_rating,
+                            :min_price, :max_price, :property_type, :amenities, :room_types,
+                            :description, :best_season, :nearby_attractions, :contact_info,
+                            :sustainability_rating, :business_facilities, :family_friendly,
+                            :pet_friendly, :accessibility, :seasonal_data, :collected_at
+                        ) ON DUPLICATE KEY UPDATE
+                            user_rating = VALUES(user_rating),
+                            min_price = VALUES(min_price),
+                            max_price = VALUES(max_price),
+                            updated_at = CURRENT_TIMESTAMP
+                    """), {
+                        'name': hotel.get('name'),
+                        'location': hotel.get('location'),
+                        'address': hotel.get('address'),
+                        'star_rating': hotel.get('star_rating'),
+                        'user_rating': hotel.get('user_rating'),
+                        'min_price': hotel.get('min_price'),
+                        'max_price': hotel.get('max_price'),
+                        'property_type': hotel.get('property_type'),
+                        'amenities': json.dumps(hotel.get('amenities', [])),
+                        'room_types': json.dumps(hotel.get('room_types', [])),
+                        'description': hotel.get('description'),
+                        'best_season': hotel.get('best_season'),
+                        'nearby_attractions': json.dumps(hotel.get('nearby_attractions', [])),
+                        'contact_info': json.dumps(hotel.get('contact_info', {})),
+                        'sustainability_rating': hotel.get('sustainability_rating'),
+                        'business_facilities': json.dumps(hotel.get('business_facilities', [])),
+                        'family_friendly': hotel.get('family_friendly'),
+                        'pet_friendly': hotel.get('pet_friendly'),
+                        'accessibility': json.dumps(hotel.get('accessibility', [])),
+                        'seasonal_data': json.dumps(hotel.get('seasonal_data', {})),
+                        'collected_at': hotel.get('collected_at')
+                    })
                     inserted_count += 1
-                    
                 except Exception as e:
-                    logger.error(f"Error inserting hotel {hotel.get('name', 'Unknown')}: {str(e)}")
+                    logger.error(f"Error inserting hotel {hotel.get('name', 'Unknown')}: {e}")
             
             conn.commit()
-            logger.info(f"Inserted {inserted_count} hotels into database")
-            return inserted_count
+        
+        return inserted_count
+    
+    def _insert_hotels_sqlite(self, hotels: List[Dict[str, Any]]) -> int:
+        """Insert hotel data using SQLite"""
+        if self.connection is None:
+            return 0
+            
+        cursor = self.connection.cursor()
+        inserted_count = 0
+        
+        for hotel in hotels:
+            try:
+                # Convert lists and dicts to JSON strings
+                amenities = json.dumps(hotel.get('amenities', []))
+                room_types = json.dumps(hotel.get('room_types', []))
+                nearby_attractions = json.dumps(hotel.get('nearby_attractions', []))
+                contact_info = json.dumps(hotel.get('contact_info', {}))
+                business_facilities = json.dumps(hotel.get('business_facilities', []))
+                accessibility = json.dumps(hotel.get('accessibility', []))
+                seasonal_data = json.dumps(hotel.get('seasonal_data', {}))
+                
+                cursor.execute("""
+                    INSERT OR REPLACE INTO hotels (
+                        name, location, address, star_rating, user_rating,
+                        min_price, max_price, property_type, amenities, room_types,
+                        description, best_season, nearby_attractions, contact_info,
+                        sustainability_rating, business_facilities, family_friendly,
+                        pet_friendly, accessibility, seasonal_data, collected_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    hotel.get('name'),
+                    hotel.get('location'),
+                    hotel.get('address'),
+                    hotel.get('star_rating'),
+                    hotel.get('user_rating'),
+                    hotel.get('min_price'),
+                    hotel.get('max_price'),
+                    hotel.get('property_type'),
+                    amenities,
+                    room_types,
+                    hotel.get('description'),
+                    hotel.get('best_season'),
+                    nearby_attractions,
+                    contact_info,
+                    hotel.get('sustainability_rating'),
+                    business_facilities,
+                    hotel.get('family_friendly'),
+                    hotel.get('pet_friendly'),
+                    accessibility,
+                    seasonal_data,
+                    hotel.get('collected_at')
+                ))
+                
+                inserted_count += 1
+            except Exception as e:
+                logger.error(f"Error inserting hotel {hotel.get('name', 'Unknown')}: {e}")
+        
+        self.connection.commit()
+        return inserted_count
     
     def get_hotels(self, 
                    location: Optional[str] = None,
